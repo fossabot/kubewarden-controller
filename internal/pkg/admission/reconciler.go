@@ -25,6 +25,7 @@ import (
 
 type Reconciler struct {
 	Client               client.Client
+	APIReader            client.Reader
 	DeploymentsNamespace string
 	Log                  logr.Logger
 }
@@ -52,7 +53,13 @@ func (r *Reconciler) ReconcileDeletion(
 		},
 	}
 	err := r.Client.Delete(ctx, deployment)
-	if err != nil && !apierrors.IsNotFound(err) {
+	if err == nil {
+		setFalseConditionType(
+			&policyServer.Status.Conditions,
+			string(policiesv1alpha2.PolicyServerDeploymentReconciled),
+			"Policy Server has been deleted",
+		)
+	} else if !apierrors.IsNotFound(err) {
 		r.Log.Error(err, "ReconcileDeletion: cannot delete PolicyServer Deployment "+policyServer.Name)
 		errors = append(errors, err)
 	}
@@ -63,9 +70,14 @@ func (r *Reconciler) ReconcileDeletion(
 			Namespace: r.DeploymentsNamespace,
 		},
 	}
-
 	err = r.Client.Delete(ctx, certificateSecret)
-	if err != nil && !apierrors.IsNotFound(err) {
+	if err == nil {
+		setFalseConditionType(
+			&policyServer.Status.Conditions,
+			string(policiesv1alpha2.PolicyServerCASecretReconciled),
+			"Policy Server has been deleted",
+		)
+	} else if !apierrors.IsNotFound(err) {
 		r.Log.Error(err, "ReconcileDeletion: cannot delete PolicyServer Certificate Secret "+policyServer.Name)
 		errors = append(errors, err)
 	}
@@ -77,7 +89,13 @@ func (r *Reconciler) ReconcileDeletion(
 		},
 	}
 	err = r.Client.Delete(ctx, service)
-	if err != nil && !apierrors.IsNotFound(err) {
+	if err == nil {
+		setFalseConditionType(
+			&policyServer.Status.Conditions,
+			string(policiesv1alpha2.PolicyServerServiceReconciled),
+			"Policy Server has been deleted",
+		)
+	} else if !apierrors.IsNotFound(err) {
 		r.Log.Error(err, "ReconcileDeletion: cannot delete PolicyServer Service "+policyServer.Name)
 		errors = append(errors, err)
 	}
@@ -88,20 +106,18 @@ func (r *Reconciler) ReconcileDeletion(
 			Namespace: r.DeploymentsNamespace,
 		},
 	}
-
 	err = r.Client.Delete(ctx, cfg)
-	if err != nil && !apierrors.IsNotFound(err) {
+	if err == nil {
+		setFalseConditionType(
+			&policyServer.Status.Conditions,
+			string(policiesv1alpha2.PolicyServerConfigMapReconciled),
+			"Policy Server has been deleted",
+		)
+	} else if !apierrors.IsNotFound(err) {
 		r.Log.Error(err, "ReconcileDeletion: cannot delete PolicyServer ConfigMap "+policyServer.Name)
 		errors = append(errors, err)
 	}
 
-	patch := policyServer.DeepCopy()
-	controllerutil.RemoveFinalizer(patch, constants.KubewardenFinalizer)
-	err = r.Client.Patch(ctx, patch, client.MergeFrom(policyServer))
-	if err != nil && !apierrors.IsNotFound(err) {
-		r.Log.Error(err, "ReconcileDeletion: cannot remove finalizer "+policyServer.Name)
-		errors = append(errors, err)
-	}
 	if len(errors) == 0 {
 		return nil
 	}
@@ -111,13 +127,13 @@ func (r *Reconciler) ReconcileDeletion(
 
 func setFalseConditionType(
 	conditions *[]metav1.Condition,
-	conditionType policiesv1alpha2.PolicyConditionType,
+	conditionType string,
 	message string,
 ) {
 	apimeta.SetStatusCondition(
 		conditions,
 		metav1.Condition{
-			Type:    string(conditionType),
+			Type:    conditionType,
 			Status:  metav1.ConditionFalse,
 			Reason:  string(policiesv1alpha2.ReconciliationFailed),
 			Message: message,
@@ -125,11 +141,11 @@ func setFalseConditionType(
 	)
 }
 
-func setTrueConditionType(conditions *[]metav1.Condition, conditionType policiesv1alpha2.PolicyConditionType) {
+func setTrueConditionType(conditions *[]metav1.Condition, conditionType string) {
 	apimeta.SetStatusCondition(
 		conditions,
 		metav1.Condition{
-			Type:   string(conditionType),
+			Type:   conditionType,
 			Status: metav1.ConditionTrue,
 			Reason: string(policiesv1alpha2.ReconciliationSucceeded),
 		},
@@ -154,7 +170,7 @@ func (r *Reconciler) Reconcile(
 	if err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerCARootSecretReconciled,
+			string(policiesv1alpha2.PolicyServerCARootSecretReconciled),
 			fmt.Sprintf("error reconciling secret: %v", err),
 		)
 		return err
@@ -163,7 +179,7 @@ func (r *Reconciler) Reconcile(
 	if err := r.reconcileCASecret(ctx, policyServerCARootSecret); err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerCARootSecretReconciled,
+			string(policiesv1alpha2.PolicyServerCARootSecretReconciled),
 			fmt.Sprintf("error reconciling secret: %v", err),
 		)
 		return err
@@ -171,14 +187,14 @@ func (r *Reconciler) Reconcile(
 
 	setTrueConditionType(
 		&policyServer.Status.Conditions,
-		policiesv1alpha2.PolicyServerCARootSecretReconciled,
+		string(policiesv1alpha2.PolicyServerCARootSecretReconciled),
 	)
 
 	policyServerCASecret, err := r.fetchOrInitializePolicyServerCASecret(ctx, policyServer.NameWithPrefix(), policyServerCARootSecret, admissionregistration.GenerateCert)
 	if err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerCASecretReconciled,
+			string(policiesv1alpha2.PolicyServerCASecretReconciled),
 			fmt.Sprintf("error reconciling secret: %v", err),
 		)
 		return err
@@ -187,7 +203,7 @@ func (r *Reconciler) Reconcile(
 	if err := r.reconcileCASecret(ctx, policyServerCASecret); err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerCASecretReconciled,
+			string(policiesv1alpha2.PolicyServerCASecretReconciled),
 			fmt.Sprintf("error reconciling secret: %v", err),
 		)
 		return err
@@ -195,7 +211,7 @@ func (r *Reconciler) Reconcile(
 
 	setTrueConditionType(
 		&policyServer.Status.Conditions,
-		policiesv1alpha2.PolicyServerCASecretReconciled,
+		string(policiesv1alpha2.PolicyServerCASecretReconciled),
 	)
 
 	policies, err = r.getPolicies(ctx, policyServer)
@@ -206,7 +222,7 @@ func (r *Reconciler) Reconcile(
 	if err := r.reconcilePolicyServerConfigMap(ctx, policyServer, policies); err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerConfigMapReconciled,
+			string(policiesv1alpha2.PolicyServerConfigMapReconciled),
 			fmt.Sprintf("error reconciling configmap: %v", err),
 		)
 		return err
@@ -214,13 +230,13 @@ func (r *Reconciler) Reconcile(
 
 	setTrueConditionType(
 		&policyServer.Status.Conditions,
-		policiesv1alpha2.PolicyServerConfigMapReconciled,
+		string(policiesv1alpha2.PolicyServerConfigMapReconciled),
 	)
 
 	if err := r.reconcilePolicyServerDeployment(ctx, policyServer); err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerDeploymentReconciled,
+			string(policiesv1alpha2.PolicyServerDeploymentReconciled),
 			fmt.Sprintf("error reconciling deployment: %v", err),
 		)
 		return err
@@ -228,13 +244,13 @@ func (r *Reconciler) Reconcile(
 
 	setTrueConditionType(
 		&policyServer.Status.Conditions,
-		policiesv1alpha2.PolicyServerDeploymentReconciled,
+		string(policiesv1alpha2.PolicyServerDeploymentReconciled),
 	)
 
 	if err := r.reconcilePolicyServerService(ctx, policyServer); err != nil {
 		setFalseConditionType(
 			&policyServer.Status.Conditions,
-			policiesv1alpha2.PolicyServerServiceReconciled,
+			string(policiesv1alpha2.PolicyServerServiceReconciled),
 			fmt.Sprintf("error reconciling service: %v", err),
 		)
 		return err
@@ -242,7 +258,7 @@ func (r *Reconciler) Reconcile(
 
 	setTrueConditionType(
 		&policyServer.Status.Conditions,
-		policiesv1alpha2.PolicyServerServiceReconciled,
+		string(policiesv1alpha2.PolicyServerServiceReconciled),
 	)
 
 	return r.enablePolicyWebhook(ctx, policyServer, policyServerCARootSecret, policies)
@@ -260,27 +276,6 @@ func (r *Reconciler) HasClusterAdmissionPoliciesBounded(ctx context.Context, pol
 	return false, nil
 }
 
-func (r *Reconciler) DeleteAllClusterAdmissionPolicies(ctx context.Context, policyServer *policiesv1alpha2.PolicyServer) error {
-	policies, err := r.getPolicies(ctx, policyServer)
-	if err != nil {
-		return err
-	}
-	for _, policy := range policies {
-		policy := policy // safely use pointer inside for
-		// will not delete it because it has a finalizer. It will add a DeletionTimestamp
-		err := r.Client.Delete(ctx, policy)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed deleting pending Policy %s: %w",
-				policy.GetUniqueName(), err)
-		}
-	}
-	err = r.deleteWebhooksClusterAdmissionPolicies(ctx, policies)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (r *Reconciler) enablePolicyWebhook(
 	ctx context.Context,
 	policyServer *policiesv1alpha2.PolicyServer,
@@ -293,16 +288,12 @@ func (r *Reconciler) enablePolicyWebhook(
 	if !policyServerReady {
 		return errors.New("policy server not yet ready")
 	}
-
 	for _, policy := range policies {
-		policy := policy // safely use pointer inside for
-		// register the new dynamic admission controller only once the Policy is
-		// served by the PolicyServer deployment
 		if policy.IsMutating() {
 			if err := r.reconcileMutatingWebhookConfiguration(ctx, policy, policyServerSecret, policyServer.NameWithPrefix()); err != nil {
 				setFalseConditionType(
 					&policy.GetStatus().Conditions,
-					policiesv1alpha2.ClusterAdmissionPolicyActive,
+					string(policiesv1alpha2.PolicyActive),
 					fmt.Sprintf("error reconciling mutating webhook configuration: %v", err),
 				)
 				return err
@@ -311,7 +302,7 @@ func (r *Reconciler) enablePolicyWebhook(
 			if err := r.reconcileValidatingWebhookConfiguration(ctx, policy, policyServerSecret, policyServer.NameWithPrefix()); err != nil {
 				setFalseConditionType(
 					&policy.GetStatus().Conditions,
-					policiesv1alpha2.ClusterAdmissionPolicyActive,
+					string(policiesv1alpha2.PolicyActive),
 					fmt.Sprintf("error reconciling validating webhook configuration: %v", err),
 				)
 				return err
@@ -319,7 +310,7 @@ func (r *Reconciler) enablePolicyWebhook(
 		}
 		setTrueConditionType(
 			&policy.GetStatus().Conditions,
-			policiesv1alpha2.ClusterAdmissionPolicyActive,
+			string(policiesv1alpha2.PolicyActive),
 		)
 		policy.SetStatus(policiesv1alpha2.PolicyStatusActive)
 		if err := r.UpdateAdmissionPolicyStatus(ctx, policy); err != nil {

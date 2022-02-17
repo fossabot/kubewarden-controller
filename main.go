@@ -26,11 +26,14 @@ import (
 
 	"github.com/ereslibre/kube-webhook-wrapper/webhookwrapper"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -101,6 +104,7 @@ func main() {
 			HealthProbeBindAddress: probeAddr,
 			LeaderElection:         enableLeaderElection,
 			LeaderElectionID:       "a4ddbf36.kubewarden.io",
+			ClientDisableCacheFor:  []client.Object{&corev1.ConfigMap{}, &appsv1.Deployment{}},
 		},
 		setupLog,
 		environment.developmentMode,
@@ -114,16 +118,67 @@ func main() {
 
 	reconciler := admission.Reconciler{
 		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),
 		DeploymentsNamespace: deploymentsNamespace,
 	}
 
 	if err = (&policiescontrollers.PolicyServerReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
-		Log:        ctrl.Log.WithName("controllers").WithName("policies").WithName("ClusterAdmissionPolicy"),
+		Log:        ctrl.Log.WithName("policy-server-reconciler"),
 		Reconciler: reconciler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PolicyServer")
+		os.Exit(1)
+	}
+
+	if err = (&policiescontrollers.AdmissionPolicyStatusReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Log:        ctrl.Log.WithName("admission-policy-status-reconciler"),
+		Reconciler: reconciler,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AdmissionPolicy status")
+		os.Exit(1)
+	}
+
+	if err = (&policiescontrollers.ClusterAdmissionPolicyStatusReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Log:        ctrl.Log.WithName("cluster-admission-policy-status-reconciler"),
+		Reconciler: reconciler,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterAdmissionPolicy status")
+		os.Exit(1)
+	}
+
+	if err = (&policiescontrollers.AdmissionPolicyGCReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Log:        ctrl.Log.WithName("admission-policy-gc-reconciler"),
+		Reconciler: reconciler,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "AdmissionPolicy GC reconciler")
+		os.Exit(1)
+	}
+
+	if err = (&policiescontrollers.ClusterAdmissionPolicyGCReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Log:        ctrl.Log.WithName("cluster-admission-policy-gc-reconciler"),
+		Reconciler: reconciler,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterAdmissionPolicy GC reconciler")
+		os.Exit(1)
+	}
+
+	if err = (&policiescontrollers.PolicyServerGCReconciler{
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		Log:        ctrl.Log.WithName("policy-server-gc-reconciler"),
+		Reconciler: reconciler,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PolicyServer GC reconciler")
 		os.Exit(1)
 	}
 
@@ -149,7 +204,7 @@ func webhooks() []webhookwrapper.WebhookRegistrator {
 	return []webhookwrapper.WebhookRegistrator{
 		{
 			Registrator: (&policiesv1alpha2.PolicyServer{}).SetupWebhookWithManager,
-			Name:        "policyservers.kubewarden.dev",
+			Name:        "mutate-policyservers.kubewarden.dev",
 			RulesWithOperations: []admissionregistrationv1.RuleWithOperations{
 				{
 					Operations: []admissionregistrationv1.OperationType{
@@ -168,7 +223,7 @@ func webhooks() []webhookwrapper.WebhookRegistrator {
 		},
 		{
 			Registrator: (&policiesv1alpha2.ClusterAdmissionPolicy{}).SetupWebhookWithManager,
-			Name:        "clusteradmissionpolicies.kubewarden.dev",
+			Name:        "mutate-clusteradmissionpolicies.kubewarden.dev",
 			RulesWithOperations: []admissionregistrationv1.RuleWithOperations{
 				{
 					Operations: []admissionregistrationv1.OperationType{
@@ -187,10 +242,11 @@ func webhooks() []webhookwrapper.WebhookRegistrator {
 		},
 		{
 			Registrator: (&policiesv1alpha2.ClusterAdmissionPolicy{}).SetupWebhookWithManager,
-			Name:        "validateclusteradmissionpolicies.kubewarden.dev",
+			Name:        "validate-clusteradmissionpolicies.kubewarden.dev",
 			RulesWithOperations: []admissionregistrationv1.RuleWithOperations{
 				{
 					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Create,
 						admissionregistrationv1.Update,
 					},
 					Rule: admissionregistrationv1.Rule{
@@ -205,7 +261,7 @@ func webhooks() []webhookwrapper.WebhookRegistrator {
 		},
 		{
 			Registrator: (&policiesv1alpha2.AdmissionPolicy{}).SetupWebhookWithManager,
-			Name:        "admissionpolicies.kubewarden.dev",
+			Name:        "mutate-admissionpolicies.kubewarden.dev",
 			RulesWithOperations: []admissionregistrationv1.RuleWithOperations{
 				{
 					Operations: []admissionregistrationv1.OperationType{
@@ -224,7 +280,7 @@ func webhooks() []webhookwrapper.WebhookRegistrator {
 		},
 		{
 			Registrator: (&policiesv1alpha2.AdmissionPolicy{}).SetupWebhookWithManager,
-			Name:        "validateadmissionpolicies.kubewarden.dev",
+			Name:        "validate-admissionpolicies.kubewarden.dev",
 			RulesWithOperations: []admissionregistrationv1.RuleWithOperations{
 				{
 					Operations: []admissionregistrationv1.OperationType{
