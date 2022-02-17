@@ -157,6 +157,10 @@ func (r *AdmissionPolicy) GetPolicyMode() PolicyMode {
 	return r.Spec.Mode
 }
 
+func (r *AdmissionPolicy) SetPolicyMode(policyMode PolicyMode) {
+	r.Status.PolicyMode = PolicyModeStatus(policyMode)
+}
+
 func (r *AdmissionPolicy) GetModule() string {
 	return r.Spec.Module
 }

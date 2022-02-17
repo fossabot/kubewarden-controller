@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
-	"time"
 
 	policiesv1alpha2 "github.com/kubewarden/kubewarden-controller/apis/policies/v1alpha2"
 	appsv1 "k8s.io/api/apps/v1"
@@ -146,7 +145,7 @@ func (r *Reconciler) updatePolicyServerDeployment(ctx context.Context, policySer
 		patch := originalDeployment.DeepCopy()
 		patch.Spec.Replicas = newDeployment.Spec.Replicas
 		patch.Spec.Template = newDeployment.Spec.Template
-		patch.Spec.Template.Annotations[constants.PolicyServerDeploymentRestartAnnotation] = time.Now().Format(time.RFC3339)
+		patch.ObjectMeta.Annotations[constants.PolicyServerDeploymentConfigVersionAnnotation] = newDeployment.Annotations[constants.PolicyServerDeploymentConfigVersionAnnotation]
 		err = r.Client.Patch(ctx, patch, client.MergeFrom(originalDeployment))
 		if err != nil {
 			return fmt.Errorf("cannot patch policy-server Deployment: %w", err)
@@ -161,6 +160,7 @@ func shouldUpdatePolicyServerDeployment(originalDeployment *appsv1.Deployment, n
 	return *originalDeployment.Spec.Replicas != *newDeployment.Spec.Replicas ||
 		originalDeployment.Spec.Template.Spec.Containers[0].Image != newDeployment.Spec.Template.Spec.Containers[0].Image ||
 		originalDeployment.Spec.Template.Spec.ServiceAccountName != newDeployment.Spec.Template.Spec.ServiceAccountName ||
+		originalDeployment.Annotations[constants.PolicyServerDeploymentConfigVersionAnnotation] != newDeployment.Annotations[constants.PolicyServerDeploymentConfigVersionAnnotation] ||
 		!reflect.DeepEqual(originalDeployment.Spec.Template.Spec.Containers[0].Env, newDeployment.Spec.Template.Spec.Containers[0].Env) ||
 		!haveEqualAnnotationsWithoutRestart(originalDeployment, newDeployment)
 }
@@ -302,15 +302,17 @@ func (r *Reconciler) deployment(configMapVersion string, policyServer *policiesv
 	if templateAnnotations == nil {
 		templateAnnotations = make(map[string]string)
 	}
-	templateAnnotations[constants.PolicyServerDeploymentConfigAnnotation] = configMapVersion
 
 	policyServerDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      policyServer.NameWithPrefix(),
 			Namespace: r.DeploymentsNamespace,
+			Annotations: map[string]string{
+				constants.PolicyServerDeploymentConfigVersionAnnotation: configMapVersion,
+			},
 			Labels: map[string]string{
-				constants.AppLabelKey:              policyServer.AppLabel(),
-				constants.PolicyServerNameLabelKey: policyServer.Name,
+				constants.AppLabelKey:          policyServer.AppLabel(),
+				constants.PolicyServerLabelKey: policyServer.Name,
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -327,6 +329,8 @@ func (r *Reconciler) deployment(configMapVersion string, policyServer *policiesv
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						constants.AppLabelKey: policyServer.AppLabel(),
+						constants.PolicyServerDeploymentPodSpecConfigVersionLabel: configMapVersion,
+						constants.PolicyServerLabelKey:                            policyServer.Name,
 					},
 					Annotations: templateAnnotations,
 				},
