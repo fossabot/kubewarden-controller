@@ -37,4 +37,7 @@ const (
 
 	// Finalizers
 	KubewardenFinalizer = "kubewarden"
+
+	// Names
+	DefaultPolicyServerName = "default"
 )

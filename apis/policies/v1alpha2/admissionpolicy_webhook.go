@@ -49,6 +49,12 @@ var _ webhook.Defaulter = &AdmissionPolicy{}
 // Default implements webhook.Defaulter so a webhook will be registered for the type
 func (r *AdmissionPolicy) Default() {
 	admissionpolicylog.Info("default", "name", r.Name)
+	if r.Spec.PolicyServer == "" {
+		// TODO?: this could be configurable through an argument on the
+		// controller. Whether or not to default policy server on
+		// admission policies, and to what policy server
+		r.Spec.PolicyServer = constants.DefaultPolicyServerName
+	}
 	if r.ObjectMeta.DeletionTimestamp == nil {
 		controllerutil.AddFinalizer(r, constants.KubewardenFinalizer)
 	}
