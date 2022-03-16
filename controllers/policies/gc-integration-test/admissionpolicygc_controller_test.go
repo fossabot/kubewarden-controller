@@ -14,30 +14,32 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package policies
+package gc_integration_test
 
 import (
 	"context"
+	"fmt"
+	policiesv1alpha2 "github.com/kubewarden/kubewarden-controller/apis/policies/v1alpha2"
+	"github.com/kubewarden/kubewarden-controller/controllers/policies"
 	"github.com/kubewarden/kubewarden-controller/internal/pkg/admission"
-	"github.com/kubewarden/kubewarden-controller/internal/pkg/constants"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"path/filepath"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"testing"
-	"time"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"path/filepath"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	policiesv1alpha2 "github.com/kubewarden/kubewarden-controller/apis/policies/v1alpha2"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"testing"
+	"time"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -52,21 +54,23 @@ var (
 	cancel    context.CancelFunc
 )
 
-func TestAPIs(t *testing.T) {
+func TestAdmissionPolicyStatus(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	RunSpecsWithDefaultAndCustomReporters(t,
-		"AdmissionPolicy Status Controller Suite",
+		"AdmissionPolicy GC Controller Suite",
 		[]Reporter{printer.NewlineReporter{}})
 }
 
 var _ = BeforeSuite(func() {
+	fmt.Println("BBB")
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -83,9 +87,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: scheme.Scheme,
-	})
+	var mgr manager.Manager
+	Eventually(func() bool {
+		mgr, err = ctrl.NewManager(cfg, ctrl.Options{
+			Scheme: scheme.Scheme,
+		})
+		return err == nil
+	}, timeout, interval).Should(BeTrue())
 
 	Expect(err).ToNot(HaveOccurred())
 	reconciler := admission.Reconciler{
@@ -94,7 +102,7 @@ var _ = BeforeSuite(func() {
 		DeploymentsNamespace: "default",
 	}
 
-	err = (&AdmissionPolicyStatusReconciler{
+	err = (&policies.AdmissionPolicyGCReconciler{
 		Client:     mgr.GetClient(),
 		Scheme:     mgr.GetScheme(),
 		Log:        ctrl.Log.WithName("admission-policy-status-reconciler"),
@@ -150,49 +158,18 @@ var admissionPolicyWithPolicyServer = policiesv1alpha2.AdmissionPolicy{
 
 var _ = Describe("Given an AdmissionPolicy", func() {
 	When("does not have a policy server", func() {
-		It("policy is set to unscheduled", func() {
-			verifyPolicyUnscheduled(ctx, admissionPolicyWithoutPolicyServer.DeepCopy())
-		})
-	})
-	When("has a policy server", func() {
-		Context("the policy server does not exist", func() {
-			It("policy is set to scheduled and moved to pending when PolicyServer is created", func() {
-				verifyPolicyTransitionToPending(ctx, admissionPolicyWithPolicyServer.DeepCopy())
-			})
-		})
-		Context("the policy server exist", func() {
-			BeforeEach(func() {
-				createAdmissionPolicyDeploymentAndConfigmap()
-			})
-			AfterEach(func() {
-				deleteAdmissionPolicyDeploymentAndConfigmap()
-			})
-			Context("alter policy mode in configmap", func() {
-				It("policy status mode is updated", func() {
-					verifyPolicyModeTransition(ctx, admissionPolicyWithPolicyServer.DeepCopy())
-				})
-			})
-			Context("deployment PolicyServerDeploymentConfigVersionAnnotation annotation is updated with resource version from configmap", func() {
-				It("PolicyServerConfigurationUpToDate is set to true and reason is set to ConfigurationVersionMatch", func() {
-					verifyConfigurationVersionMatch(ctx, admissionPolicyWithPolicyServer.DeepCopy())
-				})
-			})
+		It("remove", func() {
+			defer func() {
+			}()
+			Expect(k8sClient.Create(ctx, admissionPolicyWithPolicyServer.DeepCopy())).Should(Succeed())
+			Expect(k8sClient.Delete(ctx, admissionPolicyWithPolicyServer.DeepCopy()))
+
+			lookupKey := types.NamespacedName{Name: admissionPolicyWithPolicyServer.GetName(), Namespace: admissionPolicyWithPolicyServer.DeepCopy().GetNamespace()}
+
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, lookupKey, &admissionPolicyWithPolicyServer)
+				return errors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 })
-
-func createAdmissionPolicyDeploymentAndConfigmap() {
-	Expect(k8sClient.Create(ctx, admissionPolicyWithPolicyServer.DeepCopy())).Should(Succeed())
-	cfg := createConfigMap(&admissionPolicyWithPolicyServer, string(policiesv1alpha2.PolicyModeStatusMonitor))
-	deployment := policyServerDeployment.DeepCopy()
-	deployment.Annotations = map[string]string{constants.PolicyServerDeploymentConfigVersionAnnotation: ""}
-	Expect(k8sClient.Create(ctx, deployment)).Should(Succeed())
-	Expect(k8sClient.Create(ctx, cfg)).Should(Succeed())
-}
-
-func deleteAdmissionPolicyDeploymentAndConfigmap() {
-	cfg := createConfigMap(&admissionPolicyWithPolicyServer, string(policiesv1alpha2.PolicyModeStatusMonitor))
-	Expect(k8sClient.Delete(ctx, &policyServerDeployment)).Should(Succeed())
-	Expect(k8sClient.Delete(ctx, cfg)).Should(Succeed())
-	Expect(k8sClient.Delete(ctx, &admissionPolicyWithPolicyServer)).Should(Succeed())
-}

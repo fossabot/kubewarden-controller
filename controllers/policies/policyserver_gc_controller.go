@@ -53,6 +53,7 @@ func (r *PolicyServerGCReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 	admissionPolicyList := policiesv1alpha2.AdmissionPolicyList{}
+	//TODO check all namespaces??
 	if err := r.Reconciler.APIReader.List(ctx, &admissionPolicyList); err != nil {
 		return ctrl.Result{}, fmt.Errorf("cannot list admission policies: %w", err)
 	}

@@ -42,6 +42,7 @@ func (r *AdmissionPolicyGCReconciler) Reconcile(ctx context.Context, req ctrl.Re
 func (r *AdmissionPolicyGCReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&policiesv1alpha2.AdmissionPolicy{}).
+		//TODO do we need this controller?
 		Watches(&source.Kind{Type: &policiesv1alpha2.PolicyServer{}}, handler.Funcs{
 			UpdateFunc: func(e event.UpdateEvent, queue workqueue.RateLimitingInterface) {
 				// When a policy server is deleted, the first thing that
@@ -54,6 +55,7 @@ func (r *AdmissionPolicyGCReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return
 				}
 				admissionPolicyList := policiesv1alpha2.AdmissionPolicyList{}
+				// TODO add namespace?
 				if err := r.Reconciler.APIReader.List(context.TODO(), &admissionPolicyList); err != nil {
 					return
 				}

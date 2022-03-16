@@ -1,4 +1,4 @@
-package policies
+package admissionpolicy_integration_test
 
 import (
 	"context"

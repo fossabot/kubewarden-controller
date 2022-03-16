@@ -95,6 +95,7 @@ func SetPolicyUniquenessCondition(ctx context.Context, apiReader client.Reader, 
 		return
 	}
 	pods := corev1.PodList{}
+	//TODO check all pods?
 	if err := apiReader.List(ctx, &pods, client.InNamespace(policyServerDeployment.Namespace)); err != nil {
 		return
 	}

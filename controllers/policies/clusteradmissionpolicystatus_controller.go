@@ -98,7 +98,7 @@ func (r *ClusterAdmissionPolicyStatusReconciler) findClusterAdmissionPoliciesFor
 	configMap := corev1.ConfigMap{}
 	err := r.Reconciler.APIReader.Get(context.TODO(), client.ObjectKey{
 		Namespace: pod.ObjectMeta.Namespace,
-		Name:      policyServerDeploymentName, // As the deployment name matches the name of the ConfigMap
+		Name:      policyServerDeploymentName, // As the deployment admissionPolicyName matches the admissionPolicyName of the ConfigMap
 	}, &configMap)
 	if err != nil {
 		return []reconcile.Request{}
