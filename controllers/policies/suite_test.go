@@ -160,13 +160,33 @@ var _ = Describe("Given an PolicyServer", func() {
 			Expect(k8sClient.Delete(ctx, policyServer.DeepCopy())).Should(Succeed())
 		}()
 		caRootSecret := corev1.Secret{}
-		Eventually(isObjectPresent(constants.PolicyServerCARootSecretName, &caRootSecret), timeout, interval).Should(BeTrue())
+		Eventually(func() bool {
+			err := k8sClient.Get(
+				ctx,
+				client.ObjectKey{
+					Namespace: namespace,
+					Name:      constants.PolicyServerCARootSecretName},
+				&caRootSecret)
+			return err == nil
+		}, timeout, interval).Should(BeTrue())
+		defer func() {
+			Expect(k8sClient.Delete(ctx, &caRootSecret)).Should(Succeed())
+		}()
+
 		Expect(caRootSecret.Data[constants.PolicyServerCARootCACert]).To(Not(BeNil()))
 		Expect(caRootSecret.Data[constants.PolicyServerCARootPemName]).To(Not(BeNil()))
 		Expect(caRootSecret.Data[constants.PolicyServerCARootPrivateKeyCertName]).To(Not(BeNil()))
 		By("and CA secret is created with cert and key")
 		certSecret := corev1.Secret{}
-		Eventually(isObjectPresent(policyServer.NameWithPrefix(), &certSecret), timeout, interval).Should(BeTrue())
+		Eventually(func() bool {
+			err := k8sClient.Get(
+				ctx,
+				client.ObjectKey{
+					Namespace: namespace,
+					Name:      policyServer.NameWithPrefix()},
+				&certSecret)
+			return err == nil
+		}, timeout, interval).Should(BeTrue())
 		Expect(certSecret.Data[constants.PolicyServerTLSCert]).To(Not(BeNil()))
 		Expect(certSecret.Data[constants.PolicyServerTLSKey]).To(Not(BeNil()))
 		defer func() {
