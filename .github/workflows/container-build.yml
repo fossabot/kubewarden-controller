@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     name: Build
-    uses: raulcabello/kubewarden-controller/.github/workflows/container-image.yml@main
+    uses: raulcabello/kubewarden-controller/.github/workflows/container-image.yml@sigstore-sginature
     with:
       push-image: true
 
