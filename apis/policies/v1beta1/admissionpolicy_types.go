@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
 import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -31,6 +31,7 @@ type AdmissionPolicySpec struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Namespaced
+//+kubebuilder:storageversion
 //+kubebuilder:printcolumn:name="Policy Server",type=string,JSONPath=`.spec.policyServer`,description="Bound to Policy Server"
 //+kubebuilder:printcolumn:name="Mutating",type=boolean,JSONPath=`.spec.mutating`,description="Whether the policy is mutating"
 //+kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`,description="Policy deployment mode"
@@ -139,6 +140,3 @@ func (r *AdmissionPolicy) GetPolicyServer() string {
 func (r *AdmissionPolicy) GetUniqueName() string {
 	return "namespaced-" + r.Namespace + "-" + r.Name
 }
-
-// Hub marks this type as a conversion hub.
-func (r *AdmissionPolicy) Hub() {}

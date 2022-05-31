@@ -14,10 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -42,7 +44,7 @@ func (r *AdmissionPolicy) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return nil
 }
 
-//+kubebuilder:webhook:path=/mutate-policies-kubewarden-io-v1alpha2-admissionpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=policies.kubewarden.io,resources=admissionpolicies,verbs=create;update,versions=v1alpha2,name=madmissionpolicy.kb.io,admissionReviewVersions={v1,v1beta1}
+//+kubebuilder:webhook:path=/mutate-policies-kubewarden-io-v1alpha2-admissionpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=policies.kubewarden.io,resources=admissionpolicies,verbs=create;update,versions=v1alpha2;v1beta1,name=madmissionpolicy.kb.io,admissionReviewVersions={v1,v1beta1}
 
 var _ webhook.Defaulter = &AdmissionPolicy{}
 
@@ -57,7 +59,7 @@ func (r *AdmissionPolicy) Default() {
 	}
 }
 
-//+kubebuilder:webhook:path=/validate-policies-kubewarden-io-v1alpha2-admissionpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=policies.kubewarden.io,resources=admissionpolicies,verbs=create;update,versions=v1alpha2,name=vadmissionpolicy.kb.io,admissionReviewVersions={v1,v1beta1}
+//+kubebuilder:webhook:path=/validate-policies-kubewarden-io-v1alpha2-admissionpolicy,mutating=false,failurePolicy=fail,sideEffects=None,groups=policies.kubewarden.io,resources=admissionpolicies,verbs=create;update,versions=v1alpha2;v1beta1,name=vadmissionpolicy.kb.io,admissionReviewVersions={v1,v1beta1}
 
 var _ webhook.Validator = &AdmissionPolicy{}
 
@@ -82,5 +84,30 @@ func (r *AdmissionPolicy) ValidateUpdate(old runtime.Object) error {
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *AdmissionPolicy) ValidateDelete() error {
 	admissionpolicylog.Info("validate delete", "name", r.Name)
+	return nil
+}
+
+func validatePolicyUpdate(oldPolicy, newPolicy Policy) error {
+	if newPolicy.GetPolicyServer() != oldPolicy.GetPolicyServer() {
+		var errs field.ErrorList
+		p := field.NewPath("spec")
+		pp := p.Child("policyServer")
+		errs = append(errs, field.Forbidden(pp, "the field is immutable"))
+
+		return apierrors.NewInvalid(
+			schema.GroupKind{Group: GroupVersion.Group, Kind: "ClusterAdmissionPolicy"},
+			newPolicy.GetName(), errs)
+	}
+	if newPolicy.GetPolicyMode() == "monitor" && oldPolicy.GetPolicyMode() == "protect" {
+		var errs field.ErrorList
+		p := field.NewPath("spec")
+		pp := p.Child("mode")
+		errs = append(errs, field.Forbidden(pp, "field cannot transition from protect to monitor. Recreate instead."))
+
+		return apierrors.NewInvalid(
+			schema.GroupKind{Group: GroupVersion.Group, Kind: "ClusterAdmissionPolicy"},
+			newPolicy.GetName(), errs)
+	}
+
 	return nil
 }
