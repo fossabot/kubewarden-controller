@@ -4,6 +4,8 @@ in WebAssembly.
 For more information refer to the [official Kubewarden website](https://kubewarden.io/).
 
 # kubewarden-controller
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fraulcabello%2Fkubewarden-controller.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fraulcabello%2Fkubewarden-controller?ref=badge_shield)
+
 
 `kubewarden-controller` is a Kubernetes controller that allows you to
 dynamically register Kubewarden admission policies.
@@ -79,3 +81,7 @@ $ kubectl patch clusteradmissionpolicy psp-capabilities -p '{"metadata":{"finali
 
 The [official documentation](https://docs.kubewarden.io) provides more insights
 about how the project works and how to use it.
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fraulcabello%2Fkubewarden-controller.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fraulcabello%2Fkubewarden-controller?ref=badge_large)
